@@ -379,6 +379,55 @@ mod test {
   }
 
   #[tokio::test]
+  async fn remote_url_no_path() {
+    let mut builder = VendorTestBuilder::with_default_setup();
+    let output = builder
+      .with_loader(|loader| {
+        loader
+          .add(
+            "/mod.ts",
+            concat!(
+              r#"import "https://localhost";"#,
+              r#"import "https://localhost/subdir/mod.ts";"#,
+            ),
+          )
+          .add_with_headers(
+            "https://localhost",
+            "import './subdir'; export class Mod1 {}",
+            &[("content-type", "application/typescript")],
+          )
+          .add_with_headers(
+            "https://localhost/subdir",
+            "import './subdir/mod.ts'; export class Mod2 {}",
+            &[("content-type", "application/typescript")],
+          )
+          .add("https://localhost/subdir/mod.ts", "export class Mod3 {}");
+      })
+      .build()
+      .await
+      .unwrap();
+
+    assert_eq!(
+      output.import_map,
+      Some(json!({
+        "imports": {
+          "https://localhost/": "./localhost/",
+          "https://localhost": "./localhost/root.ts",
+          "https://localhost/subdir": "./localhost/subdir/root.ts",
+        }
+      }))
+    );
+    assert_eq!(
+      output.files,
+      to_file_vec(&[
+        ("/vendor/localhost/root.ts", "export class Mod1 {}"),
+        ("/vendor/localhost/subdir/root.ts", "export class Mod2 {}"),
+        ("/vendor/localhost/subdir/mod.ts", "export class Mod3 {}"),
+      ]),
+    );
+  }
+
+  #[tokio::test]
   async fn same_target_filename_specifiers() {
     let mut builder = VendorTestBuilder::with_default_setup();
     let output = builder
