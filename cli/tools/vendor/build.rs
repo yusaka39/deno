@@ -388,20 +388,23 @@ mod test {
             "/mod.ts",
             concat!(
               r#"import "https://localhost";"#,
+              r#"import "https://localhost/file.js";"#,
+              r#"import "https://localhost/subdir/";"#,
               r#"import "https://localhost/subdir/mod.ts";"#,
             ),
           )
           .add_with_headers(
             "https://localhost",
-            "import './subdir'; export class Mod1 {}",
+            "export class Mod1 {}",
             &[("content-type", "application/typescript")],
           )
+          .add("https://localhost/file.js", "export class Mod2 {}")
           .add_with_headers(
             "https://localhost/subdir",
-            "import './subdir/mod.ts'; export class Mod2 {}",
+            "export class Mod3 {}",
             &[("content-type", "application/typescript")],
           )
-          .add("https://localhost/subdir/mod.ts", "export class Mod3 {}");
+          .add("https://localhost/subdir/mod.ts", "export class Mod4 {}");
       })
       .build()
       .await
@@ -411,9 +414,13 @@ mod test {
       output.import_map,
       Some(json!({
         "imports": {
-          "https://localhost/": "./localhost/",
           "https://localhost": "./localhost/root.ts",
+          // need to map all children of localhost because it's not
+          // possible to have an import map entry for the root path
+          // with a trialing slash and without a trailing slash
+          "https://localhost/file.js": "./localhost/file.js",
           "https://localhost/subdir": "./localhost/subdir/root.ts",
+          "https://localhost/subdir/": "./localhost/subdir/",
         }
       }))
     );
@@ -421,8 +428,9 @@ mod test {
       output.files,
       to_file_vec(&[
         ("/vendor/localhost/root.ts", "export class Mod1 {}"),
-        ("/vendor/localhost/subdir/root.ts", "export class Mod2 {}"),
-        ("/vendor/localhost/subdir/mod.ts", "export class Mod3 {}"),
+        ("/vendor/localhost/file.js", "export class Mod2 {}"),
+        ("/vendor/localhost/subdir/root.ts", "export class Mod3 {}"),
+        ("/vendor/localhost/subdir/mod.ts", "export class Mod4 {}"),
       ]),
     );
   }
